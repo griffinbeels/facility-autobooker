@@ -1,17 +1,23 @@
 #!/usr/bin/env python
-import mechanicalsoup
-import pickle
 import selenium.webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 import json
 from datetime import date
 from datetime import timedelta
+import config
 
+#################### START CONSTANTS ####################
+SHIBBOLETH_USERNAME = config.username
+SHIBBOLETH_PASSWORD = config.password
 CHROME_DRIVER_LOCATION = "./chromedriver"
 COOKIE_PATH = "./cookies.json"
 NELSON_BOOKING_URL = "https://bfit.brownrec.com/booking/4a42ba76-754b-48c9-95fd-8df6d4e3fb4d"
 # TODO: add swimming support
+#################### END CONSTANTS ####################
 
+#################### START HELPERS ####################
 def try_load_chrome():
     # Create chrome instance & load cookies
     driver = selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION)
@@ -44,18 +50,47 @@ def try_load_dates(driver):
     date_options = get_date_options(driver)
     if len(date_options) == 0:
         (driver, date_options) = reset_cookies_load_chrome_and_dates(driver)
-    return (driver, date_options) # updated driver, if any
+    return (driver, date_options) # updated driver, if at all
 
 def load_chrome_and_dates():
     driver = try_load_chrome()
     return try_load_dates(driver)
 
+def handle_shibboleth_login(driver):
+    # Login information screen
+    driver.find_element_by_xpath('//button[normalize-space()="Brown Username"]').click()
+    username = driver.find_element_by_id("username")
+    password = driver.find_element_by_id("password")
+
+    username.send_keys(SHIBBOLETH_USERNAME)
+    password.send_keys(SHIBBOLETH_PASSWORD)
+
+    driver.find_element_by_name("_eventId_proceed").click() # Submit login
+
+    # Wait for duo push success
+    wait_for_verification(driver)
+
+def wait_for_verification(driver):
+    # save current page url
+    current_url = driver.current_url
+
+    print("Please login. Authenticate however you want!")
+
+    # wait for URL to change with 15 seconds timeout
+    WebDriverWait(driver, 30).until(EC.url_changes(current_url))
+
 def reset_cookies_load_chrome_and_dates(old_driver):
-    if old_driver != None:
-        old_driver.get(NELSON_BOOKING_URL)
-    input("Login to your account, and then press any key.")
-    save_cookie(old_driver, COOKIE_PATH)
     old_driver.close()
+    driver = selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION)
+    driver.implicitly_wait(2)
+    driver.get(NELSON_BOOKING_URL)
+
+    # Login
+    handle_shibboleth_login(driver)
+
+    # Save cookies after shibboleth
+    save_cookie(driver, COOKIE_PATH)
+    driver.close()
     return load_chrome_and_dates()
 
 def button_disabled(element):
@@ -138,5 +173,13 @@ def single_day_loop():
 
     # TODO: Go through each day, starting from most recent, and if there is an open slot that matches preference, try to book.
 
-# Create an instance of chrome, add cookies, and refresh.
-single_day_loop()
+#################### END HELPERS ####################
+
+#################### MAIN ####################
+def main():
+    # Create an instance of chrome, add cookies, and refresh.
+    single_day_loop()
+
+if __name__ == "__main__":
+    main()
+#################### END MAIN ####################
