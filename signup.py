@@ -15,7 +15,6 @@ CHROME_DRIVER_LOCATION = "./chromedriver"
 COOKIE_PATH = "./cookies.json"
 NELSON_BOOKING_URL = "https://bfit.brownrec.com/booking/4a42ba76-754b-48c9-95fd-8df6d4e3fb4d"
 SWIM_BOOKING_URL = "https://bfit.brownrec.com/booking/25de03fb-15e3-429d-bd3c-9483cc821ad5"
-# TODO: add swimming support
 #################### END CONSTANTS ####################
 
 #################### START HELPERS ####################
