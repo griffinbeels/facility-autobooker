@@ -3,11 +3,10 @@ import selenium.webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import json
-from datetime import date
+from datetime import date, time
 from datetime import timedelta
 import argparse
 import config
-
 
 #################### START CONSTANTS ####################
 SHIBBOLETH_USERNAME = config.username
@@ -26,6 +25,14 @@ def parse_args():
     parser.add_argument('-day', help='which day you want between [0, 3] where 0 is today, 3 is three days from now', default=3)
     # parser.add_argument('-all', help='path to output JSON', default=False) # TODO: add ability to go through all days...
     return parser.parse_args()
+
+def try_accept_gdpr_cookie(driver):
+    driver.find_element_by_id("gdpr-cookie-accept").click()
+
+def check_for_reservation(driver):
+    if (len(driver.find_elements_by_class_name("booking-slot-reserved-item")) > 0):
+        return True
+    return False
 
 def try_load_chrome(chosen_url):
     # Create chrome instance & load cookies
@@ -98,6 +105,8 @@ def reset_cookies_load_chrome_and_dates(chosen_url, old_driver):
     handle_shibboleth_login(driver)
 
     # Save cookies after shibboleth
+    # Accept cookies so the slot can actually be accepted lol
+    try_accept_gdpr_cookie(driver)
     save_cookie(driver, COOKIE_PATH)
     driver.close()
     return load_chrome_and_dates(chosen_url)
@@ -132,20 +141,24 @@ def select_reservation_date(date_options, days_from_now):
     return reservation_date_by_name
 
 def try_book_for_day(chosen_url, driver, date_options, days_from_now):
-    driver.refresh()
+    try:
+        driver.refresh()
+    except:
+        print("Goodbye! (Although, you already closed me :(")
     (driver, date_options) = try_load_dates(chosen_url, driver)
-    # TODO: Sort booking slots in order of priority -- that is, 
-    # if I want [10 - 11AM, 2-3 PM], then I want to search booking_slots in that order.
-
-    # for each day, loop through booking slots once.
-    # put these in list, in order of priority as above
-    # loop through this list when doing for slot in booking_slots
     
     # Make sure the correct day is selected visually 
     reservation_date_by_name = select_reservation_date(date_options, days_from_now)
 
     # Get all slots for that date
     booking_slots = driver.find_element_by_id("divBookingSlots").find_elements_by_class_name("booking-slot-item")
+
+    # Load the ideal time slots from the relevant config 
+    ideal_times = []
+    if (chosen_url == NELSON_BOOKING_URL):
+        ideal_times = config.target_nelson_time_slots[reservation_date_by_name]
+    else:
+        ideal_times = config.target_swim_time_slots[reservation_date_by_name]
 
     # Attempt to book each slot
     for slot in booking_slots:
@@ -159,37 +172,51 @@ def try_book_for_day(chosen_url, driver, date_options, days_from_now):
                 time_slot = slot.find_element_by_tag_name("p").text
 
                 # Go through all timeslots for the reservation day, attempt to book
-                for target_time_slot in config.target_time_slots[reservation_date_by_name]:
+                for target_time_slot in ideal_times:
                     if time_slot == target_time_slot:
                         print("attempting to book", reservation_date_by_name, "at", target_time_slot)
                         booked = try_book_slot(driver, book_btn)
-                    # Return if booked successfully
-                    if (booked):
-                        return True 
+                        # Return if booked successfully ONLY IF WE ACTUALLY CHECKED FOR IT
+                        if (booked):
+                            return True 
         except: # probably caused by the booking being unsuccessful. Go to next slot.
             continue
     return False # Didn't book this day :(
 
 def single_day_loop(chosen_url, days_from_now):
     (driver, date_options) = load_chrome_and_dates(chosen_url)
-
+    
     attempt_num = 0
-    booked = False
+    booked = check_for_reservation(driver)
+    if (booked):
+        print("You already have a valid reservation! Please cancel first before running this.")
+    
     while not booked: # while didn't book, keep trying!
         booked = try_book_for_day(chosen_url, driver, date_options, days_from_now)
-        if (booked):
+        if (booked or check_for_reservation(driver)):
             print("Successfully grabbed slot :)")
+            booked = True
         else:
             print("attempt", attempt_num, "failed :(. Trying again.")
             attempt_num += 1
     
     input("press any key to quit")
-    driver.close()
+    try:
+        driver.close()
+    except:
+        print("Goodbye! (Although, you already closed me :(")
 
 
 #################### END HELPERS ####################
 #################### MAIN ####################
 def main():
+    # EXAMPLE USAGES (assumes in gym_venv, activate via: source ~/gym_venv/bin/activate):
+        # python3.7 signup.py -book swim -day 0
+        # this would attempt to book swim slots for today.
+
+        # python3.7 signup.py -book nelson -day 3
+        # this would attempt to book nelson slots for 3 days from now
+
     args = parse_args()
     chosen_url = ""
     if (args.book.lower() == "nelson"):
@@ -197,7 +224,6 @@ def main():
     elif (args.book.lower() == "swim"):
         chosen_url = SWIM_BOOKING_URL
     
-    print(chosen_url)
     # Create an instance of chrome, add cookies, and refresh.
     single_day_loop(chosen_url, int(args.day))
 
