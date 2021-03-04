@@ -1,4 +1,6 @@
 beautifulsoup4==4.8.2
+mechanicalsoup==1.0.0
+selenium==3.141.0
 python-dateutil==2.8.1
 certifi==2020.12.5
 requests==2.22.0
