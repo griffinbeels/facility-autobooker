@@ -111,7 +111,7 @@ def successful_book(driver):
     return driver.find_element_by_id("alertBookingSuccess").get_attribute("hidden") == None
 
 def try_book_slot(driver, book_btn):
-    book_btn.click()
+    # book_btn.click()
     # Confirm whether or not we got the slot... 
     return successful_book(driver)
 
@@ -120,6 +120,7 @@ def select_reservation_date(date_options, days_from_now):
     reservation_date_by_name = reservation_date.strftime('%A')[:3] # BFit does names using first 3 letters
     if (reservation_date_by_name in date_options):
         date_options[reservation_date_by_name].click()
+    return reservation_date_by_name
 
 def try_book_for_day(driver, date_options, days_from_now):
     driver.refresh()
@@ -132,7 +133,7 @@ def try_book_for_day(driver, date_options, days_from_now):
     # loop through this list when doing for slot in booking_slots
     
     # Make sure the correct day is selected visually 
-    select_reservation_date(date_options, days_from_now)
+    reservation_date_by_name = select_reservation_date(date_options, days_from_now)
 
     # Get all slots for that date
     booking_slots = driver.find_element_by_id("divBookingSlots").find_elements_by_class_name("booking-slot-item")
@@ -141,19 +142,18 @@ def try_book_for_day(driver, date_options, days_from_now):
     for slot in booking_slots:
         book_btn = slot.find_element_by_tag_name("button")
         try:
-            if not button_disabled(book_btn): # Make sure the slot is available...
+            if button_disabled(book_btn): # Make sure the slot is available...
                 # Get the time slot for this specific button
                 time_slot = slot.find_element_by_tag_name("p").text
 
-                # Go through each timeslot you want, attempt to book
-                if time_slot == "10 - 11 AM":
-                    booked = try_book_slot(driver, book_btn)
-                elif time_slot == "1:45 - 2:45 PM":
-                    booked = try_book_slot(driver, book_btn)
-
-                # Return if booked successfully
-                if (booked):
-                    return True 
+                # Go through all timeslots for the reservation day, attempt to book
+                for target_time_slot in config.target_time_slots[reservation_date_by_name]:
+                    print("attempting to book", reservation_date_by_name, "at", target_time_slot)
+                    if time_slot == target_time_slot:
+                        booked = try_book_slot(driver, book_btn)
+                    # Return if booked successfully
+                    if (booked):
+                        return True 
         except: # probably caused by the booking being unsuccessful. Go to next slot.
             continue
     return False # Didn't book this day :(
