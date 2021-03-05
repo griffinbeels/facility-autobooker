@@ -36,6 +36,7 @@ target_nelson_time_slots = {
 # Time slots that you want for Swimming:
 # SWIM:
 # Monday - Friday:
+start9am = "9 - 10 AM"
 start1015am = "10:15 - 11:15 AM"
 start1130am = "11:30 AM - 12:30 PM"
 start1245pm = "12:45 - 1:45 PM"
@@ -47,7 +48,7 @@ start2pm = "2 - 3 PM"
 # IMPORTANT: Make sure the array is ordered by PREFERENCE (e.g., first item is most prefered slot)
 target_swim_time_slots = {
     'Sun': [start1245pm, start2pm],
-    'Mon': [start1245pm],
+    'Mon': [start9am],
     'Tue': [start1245pm],
     'Wed': [start1245pm],
     'Thu': [start1245pm],
