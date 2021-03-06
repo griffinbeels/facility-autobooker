@@ -3,7 +3,6 @@ import selenium.webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
 import json
@@ -33,12 +32,16 @@ def parse_args():
     return parser.parse_args()
 
 def try_accept_gdpr_cookie(driver):
+    """
+    Accepts the GDPR cookie on Bfit -- necessary for functionality.
+    """
     driver.find_element_by_id("gdpr-cookie-accept").click()
 
-def check_for_reservation(driver): # TODO: optimize
-    if (len(driver.find_elements_by_class_name("booking-slot-reserved-item")) > 0):
-        return True
-    return False
+def check_for_reservation(driver):
+    """
+    Accepts the GDPR cookie on Bfit -- necessary for functionality.
+    """
+    return len(driver.find_elements_by_class_name("booking-slot-reserved-item")) > 0
 
 def try_load_chrome(chosen_url, is_headless):
     print("Loading Chrome...")
@@ -72,7 +75,16 @@ def try_load_dates(chosen_url, driver, is_headless):
     print("Getting all dates for reservation page...")
     date_options = get_date_options(driver)
     if len(date_options) < 4: # always 4 dates at least #TODO: Add multiple attempts here, just in case it doesn't work on the first try (e.g., page fail to load during high traffic)
+        # TODO: refresh and try load dates again instead?
         (driver, date_options) = reset_cookies_load_chrome_and_dates(chosen_url, driver, is_headless)
+    return (driver, date_options) # updated driver, if at all
+
+def try_load_dates_no_error(driver):
+    # TODO: KEEP RELOADING THIS IN A LOOP UNTIL TODAY'S DATE SHOWS UP...
+    # Dates for chrome
+    date_options = get_date_options(driver)
+    if len(date_options) < 4: # always 4 dates at least 
+        return try_load_dates_no_error(driver) # try again
     return (driver, date_options) # updated driver, if at all
 
 def load_chrome_and_dates(chosen_url, is_headless):
@@ -179,17 +191,19 @@ def select_reservation_date(date_options, days_from_now):
     reservation_date = date.today() + timedelta(days=days_from_now)
     reservation_date_by_name = reservation_date.strftime('%A')[:3] # BFit does names using first 3 letters
     if (reservation_date_by_name in date_options):
+        print("Reservation date selected:", reservation_date_by_name)
         refresh_reservation_date(date_options, reservation_date_by_name)
-    # TODO: Make sure that the date inflection doesn't mess shit up... that is, if the target day doesn't exist yet, use the prev day.
-    print("Reservation date selected:", reservation_date_by_name)
+    else: 
+        print("No reservations available yet for:", reservation_date_by_name)
     return reservation_date_by_name
 
 def refresh_reservation_date(date_options, reservation_date_by_name):
     # Optimized for Bfit -- clicking on a date refreshes buttons; no need to refresh whole page. Simply click on the correct date.
     # Make sure the correct day is selected visually 
-    date_options[reservation_date_by_name].click()
+    if date_options[reservation_date_by_name] != None:
+        date_options[reservation_date_by_name].click()
 
-def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times):
+def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times, does_refresh, days_from_now):        
     # Get the most up to date booking info
     refresh_reservation_date(date_options, reservation_date_by_name)
 
@@ -229,7 +243,11 @@ def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times
 def book_single_day(chosen_url, days_from_now, is_headless):
     (driver, date_options) = load_chrome_and_dates(chosen_url, is_headless)
 
+
     # Make sure the correct date is chosen before beginning
+    # dates = False
+    # while (not dates):
+    #     try:
     reservation_date_by_name = select_reservation_date(date_options, days_from_now)
     
     attempt_num = 0
@@ -248,7 +266,14 @@ def book_single_day(chosen_url, days_from_now, is_headless):
     while not booked: # while didn't book, keep trying!
         print("--------------")
         print("Starting attempt", attempt_num)
-        booked = try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times)
+        
+        # Handle cases where the target reservation date doesn't exist on the page yet
+        while (reservation_date_by_name not in date_options):
+            print("Refreshing to get new reservation dates...")
+            driver.refresh()
+            (driver, date_options) = try_load_dates_no_error(driver)
+
+        booked = try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times, True, days_from_now)
         if (booked): # or check_for_reservation(driver)
             print("Successfully grabbed slot :)")
             booked = True
