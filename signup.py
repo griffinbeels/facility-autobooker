@@ -1,10 +1,10 @@
 #!/usr/bin/env python
+#################### START IMPORTS ####################
 import selenium.webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-
 import json
 import time
 from datetime import date
@@ -12,6 +12,7 @@ from datetime import timedelta
 from progress.bar import Bar
 import argparse
 import config
+#################### END IMPORTS ####################
 
 #################### START CONSTANTS ####################
 SHIBBOLETH_USERNAME = config.username
@@ -28,25 +29,123 @@ def parse_args():
     parser.add_argument('-book', help='which of [Nelson, Swim] you want to book', default='Nelson')
     parser.add_argument('-day', help='which day you want between [0, 3] where 0 is today, 3 is three days from now', default=3)
     parser.add_argument("-headless", help="enter y for no gui; enter n for gui.", default="n")
-    # parser.add_argument('-all', help='path to output JSON', default=False) # TODO: add ability to go through all days...
+    # parser.add_argument('-all', help='enter y to search all dates for a reservation; n otherwise', default="n") # TODO: add ability to go through all days...
     return parser.parse_args()
 
 def try_accept_gdpr_cookie(driver):
     """
     Accepts the GDPR cookie on Bfit -- necessary for functionality.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+
+    Returns:
+        Nothing.
     """
-    driver.find_element_by_id("gdpr-cookie-accept").click()
+    driver.find_element_by_id("gdpr-cookie-accept").click() #TODO: error check
 
 def check_for_reservation(driver):
     """
-    Accepts the GDPR cookie on Bfit -- necessary for functionality.
+    If there exists a "booking-slot-reserved-item," then the user has a reservation.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+
+    Returns:
+        Nothing.
     """
     return len(driver.find_elements_by_class_name("booking-slot-reserved-item")) > 0
 
-def try_load_chrome(chosen_url, is_headless):
+def button_disabled(element):
+    """
+    For some WebElement, check whether or not it is disabled. 
+    In this case, the element should have 'disabled' ONLY as the last class selector.
+
+    Args:
+        element (WebElement): Some webelement, likely a reservation button.
+    
+    Returns:
+        true if disabled, false if enabled.
+    """
+    # Last element should be "disabled"; optimized to only search last element.
+    return "disabled" in element.get_attribute("class").split()[-1:]
+
+def save_cookie(driver, path):
+    """
+    Creates a JSON file that contains the cookies saved within Driver currently.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+        path (String): Path to the JSON file to save.
+
+    Returns:
+        Nothing (writes to file).
+    """
+
+    with open(path, 'w') as filehandler:
+        json.dump(driver.get_cookies(), filehandler)
+
+def load_cookie(driver, path):
+    """
+    Loads a JSON file that contains the cookies saved previously within an old driver instance.
+    These cookies are then added to the passed in driver.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+        path (String): Path to the JSON file to load.
+
+    Returns:
+        Nothing (adds cookies to driver).
+    """
+    with open(path, 'r') as cookiesfile:
+        cookies = json.load(cookiesfile)
+    for cookie in cookies:
+        driver.add_cookie(cookie)
+
+def print_driver_source_to_txt(driver, path):
+    """
+    Writes the page source of the current driver instance to file.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+        path (String): Path to the file to save.
+
+    Returns:
+        Nothing (writes to file).
+    """
+    with open(path, 'w') as f1:
+        f1.write(driver.page_source)
+
+def successful_book(driver, book_btn):
+    """
+    Checks whether or not the reservation slot was successful or not.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+        book_btn (WebElement): The reservation button clicked on.
+
+    Returns:
+        true if disabled, false if not.
+    """
+    return book_btn.get_attribute("disabled") != None # book button disables itself on a successful click. # TODO: may have to handle "Booking..." text in case of network lag.
+    # return driver.find_element_by_id("alertBookingSuccess").get_attribute("hidden") == None # check to see if a success alert popped up
+
+def try_load_chrome(reservation_url, is_headless):
+    """
+    Creates a driver instance (of Chrome), loads cookies if they exist,
+    and then attempts to sign-in. This should bring the user to the reservation
+    page they chose. If no cookies exist, it will return early and reset itself elsewhere.
+
+    Args:
+        reservation_url (String): The URL of the reservation page.
+        is_headless (bool): Whether the program is headless or not (headless == no GUI)
+
+    Returns:
+        The constructed driver instance with the reservation page loaded OR a driver with no cookies (error case).
+    """
     print("Loading Chrome...")
     # Create chrome instance & load cookies
-    driver = create_driver_instance(chosen_url, is_headless)
+    driver = create_driver_instance(reservation_url, is_headless)
 
     try:
         load_cookie(driver, COOKIE_PATH)
@@ -58,40 +157,92 @@ def try_load_chrome(chosen_url, is_headless):
     try:
         driver.find_element_by_xpath('//button[normalize-space()="Brown Username"]').click()
     except: # no login button exists; probably caused by logining in and not restarting.
-        driver.get(chosen_url) # try reloading the nelson booking!
+        driver.get(reservation_url) # try reloading the nelson booking!
     
     return driver
 
 def get_date_options(driver):
+    """
+    Populates a map with a mapping of {day_by_name, date button}; this allows us to access the specific 
+    date button for some day (e.g., "give me the button for Wednesday")
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+
+    Returns:
+        Populated map {day_by_name, date button}
+    """
     date_options = {}
     date_container = driver.find_elements_by_class_name("single-date-select-one-click")
     for datebtn in date_container:
-        day_by_name = datebtn.find_element_by_class_name("single-date-select-button-day").get_attribute('innerHTML')
+        day_by_name = datebtn.find_element_by_class_name("single-date-select-button-day").get_attribute('innerHTML') # not .text; doesn't work on headless w/ screen size small.
         date_options[day_by_name] = datebtn
     return date_options
 
-def try_load_dates(chosen_url, driver, is_headless):
+def try_load_dates(reservation_url, driver, is_headless):
+    """
+    Handles loading a map of date buttons. If the loading fails, then it is likely because of a cookies issue, and not being
+    able to access the reservation page; in this case, chrome is reset, cookies are reloaded (the user must auth again), and
+    the resultant dates are returned.
+
+    Args:
+        reservation_url (String): The URL of the reservation page.
+        driver (Driver): The instance of the web driver being used.
+        is_headless (bool): Whether the program is headless or not (headless == no GUI)
+
+    Returns:
+        (driver, date_options) tuple, containing the web driver (which could have been reset), and a map of {day_by_name, date button}.
+    """
     # Dates for chrome
     print("Getting all dates for reservation page...")
     date_options = get_date_options(driver)
-    if len(date_options) < 4: # always 4 dates at least #TODO: Add multiple attempts here, just in case it doesn't work on the first try (e.g., page fail to load during high traffic)
-        # TODO: refresh and try load dates again instead?
-        (driver, date_options) = reset_cookies_load_chrome_and_dates(chosen_url, driver, is_headless)
+    if len(date_options) < 4: # always 4 dates at least
+        (driver, date_options) = reset_cookies_load_chrome_and_dates(reservation_url, driver, is_headless)
     return (driver, date_options) # updated driver, if at all
 
 def try_load_dates_no_error(driver):
-    # TODO: KEEP RELOADING THIS IN A LOOP UNTIL TODAY'S DATE SHOWS UP...
+    """
+    Identical to try_load_dates except that it does NOT reset chrome or cookies. This function should be used if it is expected that
+    the page is simply loading slowly, not that there is a cookie issue potentially.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+
+    Returns:
+        (driver, date_options) tuple, containing the web driver, and a map of {day_by_name, date button}.
+    """
     # Dates for chrome
     date_options = get_date_options(driver)
     if len(date_options) < 4: # always 4 dates at least 
         return try_load_dates_no_error(driver) # try again
     return (driver, date_options) # updated driver, if at all
 
-def load_chrome_and_dates(chosen_url, is_headless):
-    driver = try_load_chrome(chosen_url, is_headless)
-    return try_load_dates(chosen_url, driver, is_headless)
+def load_chrome_and_dates(reservation_url, is_headless):
+    """
+    Loads a ChromeDriver instance, and then loads any relevant date options for the reservation page.
+
+    Args:
+        reservation_url (String): The URL of the reservation page.
+        is_headless (bool): Whether the program is headless or not (headless == no GUI)
+
+    Returns:
+        (driver, date_options) tuple, containing the Chrome web driver, and a map of {day_by_name, date button}.
+    """
+    driver = try_load_chrome(reservation_url, is_headless)
+    return try_load_dates(reservation_url, driver, is_headless)
 
 def handle_shibboleth_login(driver):
+    """
+    Assuming the user is locked out of the reservation page, this will click login, enter any info
+    (IMPORTANT: MAKE SURE TO FILL OUT sample_config.py AND RENAME IT config.py), and then login.
+    This requires authentication on the user's end, manually.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+
+    Returns:
+        Nothing
+    """
     # Login information screen
     driver.find_element_by_xpath('//button[normalize-space()="Brown Username"]').click()
     username = driver.find_element_by_id("username")
@@ -106,16 +257,39 @@ def handle_shibboleth_login(driver):
     wait_for_verification(driver)
 
 def wait_for_verification(driver):
+    """
+    Waits for the user to authenticate via Duo (or equivalent).
+    Impossible to manually fire the "Send Push" button due to JS limitations
+    (or at least, I couldn't figure it out -- someone help!).
+    Times out if the user doesn't auth.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+
+    Returns:
+        Nothing
+    """
     # save current page url
     current_url = driver.current_url
 
     print("Please login. Authenticate however you want!")
 
     # wait for URL to change with 30 seconds timeout
-    WebDriverWait(driver, 30).until(EC.url_changes(current_url))
+    WebDriverWait(driver, 300).until(EC.url_changes(current_url))
 
-def create_headless_chrome(chosen_url):
-    
+def create_headless_chrome(reservation_url):
+    """
+    Creates an instance of Chrome WebDriver without a GUI.
+    GPU disabled for compatability (according to Googling), 
+    JS enabled to have pages load as much as possible,
+    window size is 1920x1080 to ensure page sizes don't trigger mobile layouts.
+
+    Args:
+        reservation_url (String): The URL of the reservation page.
+
+    Returns:
+        Instantiated headless Chrome Web Driver.
+    """
     options = Options()
     options.add_argument('--headless')
     options.add_argument('--disable-gpu')
@@ -127,26 +301,61 @@ def create_headless_chrome(chosen_url):
     caps["pageLoadStrategy"] = "eager"  #  interactive
     driver = selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION, options=options, desired_capabilities=caps)
     driver.implicitly_wait(10)
-    driver.get(chosen_url)
+    driver.get(reservation_url)
     return driver
 
-def create_chrome_with_gui(chosen_url):
+def create_chrome_with_gui(reservation_url):
+    """
+    Creates an instance of Chrome WebDriver with a GUI.
+    JS enabled to have pages load as much as possible,
+    window size is 1920x1080 to ensure page sizes don't trigger mobile layouts.
+
+    Args:
+        reservation_url (String): The URL of the reservation page.
+
+    Returns:
+        Instantiated Chrome Web Driver with GUI.
+    """
     options = Options()
     options.add_argument('--enable-javascript')
     options.add_argument('--window-size=1920,1080')
     driver = selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION, options=options)
     driver.implicitly_wait(10)
-    driver.get(chosen_url)
+    driver.get(reservation_url)
     return driver
 
-def create_driver_instance(chosen_url, is_headless):
-    if (is_headless):
-        return create_headless_chrome(chosen_url)
-    return create_chrome_with_gui(chosen_url)
+def create_driver_instance(reservation_url, is_headless):
+    """
+    Creates an instance of Chrome WebDriver, GUI / headless depending on is_headless.
 
-def reset_cookies_load_chrome_and_dates(chosen_url, old_driver, is_headless):
+    Args:
+        reservation_url (String): The URL of the reservation page.
+        is_headless (bool): Whether the program is headless or not (headless == no GUI)
+
+    Returns:
+        Instantiated Chrome Web Driver with GUI.
+    """
+    if (is_headless):
+        return create_headless_chrome(reservation_url)
+    return create_chrome_with_gui(reservation_url)
+
+def reset_cookies_load_chrome_and_dates(reservation_url, old_driver, is_headless):
+    """
+    First, closes the old driver, and then creates a temporary driver to enable authentications.
+    Once auth'ed, saves cookies, resets the driver, and then continues with the newly loaded driver.
+    This guarantees that whatever driver instance is used after this function MUST HAVE COOKIES and
+    MUST be logged in properly.
+
+    Args:
+        reservation_url (String): The URL of the reservation page.
+        old_driver (Driver): The instance of the web driver being used.
+        is_headless (bool): Whether the program is headless or not (headless == no GUI)
+
+    Returns:
+        (driver, date_options) tuple, containing the Chrome web driver, and a map of {day_by_name, date button}.
+    """
     old_driver.close()
-    driver = create_driver_instance(chosen_url, False) # Always with GUI for auth purposes
+    driver = create_driver_instance(reservation_url, False) # Always with GUI for auth purposes
 
     # Login
     handle_shibboleth_login(driver)
@@ -156,30 +365,7 @@ def reset_cookies_load_chrome_and_dates(chosen_url, old_driver, is_headless):
     try_accept_gdpr_cookie(driver)
     save_cookie(driver, COOKIE_PATH)
     driver.close()
-    return load_chrome_and_dates(chosen_url, is_headless)
-
-def button_disabled(element):
-    # Last element should be "disabled"; optimized to only search last element.
-    return "disabled" in element.get_attribute("class").split()[-1:]
-
-def save_cookie(driver, path):
-    with open(path, 'w') as filehandler:
-        json.dump(driver.get_cookies(), filehandler)
-
-def load_cookie(driver, path):
-    with open(path, 'r') as cookiesfile:
-        cookies = json.load(cookiesfile)
-    for cookie in cookies:
-        driver.add_cookie(cookie)
-
-def print_driver_source_to_txt(driver, path):
-    with open(path, 'w') as f1:
-        f1.write(driver.page_source)
-
-def successful_book(driver, book_btn):
-    # TODO: different way of doing this for headless?
-    return book_btn.get_attribute("disabled") != None # book button disables itself on a successful click.
-    # return driver.find_element_by_id("alertBookingSuccess").get_attribute("hidden") == None # check to see if a success alert popped up
+    return load_chrome_and_dates(reservation_url, is_headless)
 
 def try_book_slot(driver, book_btn):
     book_btn.click()
@@ -240,8 +426,8 @@ def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times
     bar.finish()
     return False # Didn't book this day :(
 
-def book_single_day(chosen_url, days_from_now, is_headless):
-    (driver, date_options) = load_chrome_and_dates(chosen_url, is_headless)
+def book_single_day(reservation_url, days_from_now, is_headless):
+    (driver, date_options) = load_chrome_and_dates(reservation_url, is_headless)
 
 
     # Make sure the correct date is chosen before beginning
@@ -258,7 +444,7 @@ def book_single_day(chosen_url, days_from_now, is_headless):
 
     # Load the ideal time slots from the relevant config 
     ideal_times = []
-    if (chosen_url == NELSON_BOOKING_URL):
+    if (reservation_url == NELSON_BOOKING_URL):
         ideal_times = config.target_nelson_time_slots[reservation_date_by_name]
     else:
         ideal_times = config.target_swim_time_slots[reservation_date_by_name]
@@ -291,31 +477,44 @@ def book_single_day(chosen_url, days_from_now, is_headless):
     except:
         print("Goodbye! (Although, you already closed me :(")
 
-def book_single_day_benchmark(chosen_url, days_from_now, is_headless):
+def book_single_day_benchmark(reservation_url, days_from_now, is_headless):
     sum = 0
     for i in range(10):
         t0 = time.time()
-        book_single_day(chosen_url, days_from_now, is_headless)
+        book_single_day(reservation_url, days_from_now, is_headless)
         t1 = time.time()
         diff = t1-t0
         print(f"Total execution time for step {i}: {diff}")
         sum += diff
     print("avg:", sum/10)
 
+def get_reservation_url(args):
+    reservation_url = ""
+    if (args.book.lower() == "nelson"):
+        reservation_url = NELSON_BOOKING_URL
+    elif (args.book.lower() == "swim"):
+        reservation_url = SWIM_BOOKING_URL
+    return reservation_url
 
 #################### END HELPERS ####################
+
 #################### MAIN ####################
 def main():
-    # EXAMPLE USAGES (assumes in gym_venv, activate via: source ~/gym_venv/bin/activate):
-        # python3.7 signup.py -book swim -day 0
-        # this would attempt to book swim slots for today.
+    ################ SUGGESTED USAGES ################
+    # (assumes in gym_venv, activate via: source ~/gym_venv/bin/activate; setup via ./create_venv.sh; make sure Python 3.7):
+    # python3.7 signup.py -book swim -day 3 -headless n
+    #    this would attempt to book swim slots for today with a GUI loaded.
+    #
+    # python3.7 signup.py -book nelson -day 3 - headless y                                  < - - - - This is my personal preference. Swap 'nelson' for 'swim' if you'd like a swim slot instead.
+    #   this would attempt to book nelson slots for 3 days from now without a GUI.
+    #
+    # python3.7 signup.py -book nelson -day 0 -headless y
+    #    this would attempt to book nelson slots for today without a GUI.
+    ################ SUGGESTED USAGES ################
 
-        # python3.7 signup.py -book nelson -day 3
-        # this would attempt to book nelson slots for 3 days from now
     
-
     ################ BENCHMARKS ################
-    # PRE-REFRESH OPTIMIZATION (reservation check)
+    # PRE-REFRESH OPTIMIZATION (check for existing reservations every attempt)
     # Headless avg over 10 samples low traffic: 6.336627554893494
     # GUI avg over 10 samples low traffic: 6.923832178115845
     #
@@ -324,18 +523,14 @@ def main():
     # GUI avg over 10 samples low traffic: 4.428485107421875
     ################ BENCHMARKS ################
 
-
+    # IMPORTANT: Read the #README before continuing, to make sure you setup your config properly.
     args = parse_args()
-    chosen_url = ""
-    if (args.book.lower() == "nelson"):
-        chosen_url = NELSON_BOOKING_URL
-    elif (args.book.lower() == "swim"):
-        chosen_url = SWIM_BOOKING_URL
-    
-    # Create an instance of chrome, add cookies, and refresh.
-    # TODO: Add ability to multithread & run multiple instances of this uwu!
-    # TODO: add going through every day
-    book_single_day(chosen_url, int(args.day), args.headless.lower() == "y")
+
+    # TODO: Add ability to multithread & run multiple instances of this instead of only 1 per shell.
+    # TODO: Add going through every day and find reservation for each day (if possible) -- this would prob be used overnight, rather than at midnight, to catch cancellations.
+
+    # Attempts to book a single day, according to the args passed in.
+    book_single_day(get_reservation_url(args), int(args.day), args.headless.lower() == "y")
 
 if __name__ == "__main__":
     main()
