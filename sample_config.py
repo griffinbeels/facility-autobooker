@@ -24,13 +24,13 @@ start145pm = "1:45 - 2:45 PM"
 
 # IMPORTANT: Make sure the array is ordered by PREFERENCE (e.g., first item is most prefered slot)
 target_nelson_time_slots = {
-    'Sun': [start1230pm, start145pm],
-    'Mon': [start5pm, start345pm],
-    'Tue': [start115pm, start230pm],
-    'Wed': [start5pm, start345pm],
-    'Thu': [start115pm, start230pm, start345pm],
-    'Fri': [start5pm, start345pm],
-    'Sat': [start1230pm, start145pm]
+    'sun': [start1230pm, start145pm],
+    'mon': [start5pm, start345pm],
+    'tue': [start115pm, start230pm],
+    'wed': [start5pm, start345pm],
+    'thu': [start115pm, start230pm, start345pm],
+    'fri': [start5pm, start345pm],
+    'sat': [start1230pm, start145pm]
 }
 
 # Time slots that you want for Swimming:
@@ -47,11 +47,11 @@ start2pm = "2 - 3 PM"
 
 # IMPORTANT: Make sure the array is ordered by PREFERENCE (e.g., first item is most prefered slot)
 target_swim_time_slots = {
-    'Sun': [start1245pm, start2pm],
-    'Mon': [start9am],
-    'Tue': [start1245pm],
-    'Wed': [start1245pm],
-    'Thu': [start1245pm],
-    'Fri': [start1245pm],
-    'Sat': [start1245pm, start2pm]
+    'sun': [start1245pm, start2pm],
+    'mon': [start9am],
+    'tue': [start1245pm],
+    'wed': [start1245pm],
+    'thu': [start1245pm],
+    'fri': [start1245pm],
+    'sat': [start1245pm, start2pm]
 }

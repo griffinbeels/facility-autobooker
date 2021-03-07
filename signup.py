@@ -5,6 +5,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from concurrent.futures import ThreadPoolExecutor, wait
 import json
 import time
 from datetime import date
@@ -19,16 +20,21 @@ SHIBBOLETH_USERNAME = config.username
 SHIBBOLETH_PASSWORD = config.password
 CHROME_DRIVER_LOCATION = "./chromedriver"
 COOKIE_PATH = "./cookies.json"
+NELSON_ID = "n"
+SWIM_ID = "s"
 NELSON_BOOKING_URL = "https://bfit.brownrec.com/booking/4a42ba76-754b-48c9-95fd-8df6d4e3fb4d"
 SWIM_BOOKING_URL = "https://bfit.brownrec.com/booking/25de03fb-15e3-429d-bd3c-9483cc821ad5"
+LOADING_WAIT_DUR = 3
 #################### END CONSTANTS ####################
 
 #################### START HELPERS ####################
 def parse_args():
     parser = argparse.ArgumentParser(description='Bfit Auto Booker')
-    parser.add_argument('-book', help='which of [Nelson, Swim] you want to book', default='Nelson')
+    parser.add_argument('-book', help='which of [(n)elson, s(wim)] you want to book. That is, one of {n, s}.', default='n')
     parser.add_argument('-day', help='which day you want between [0, 3] where 0 is today, 3 is three days from now', default=3)
-    parser.add_argument("-headless", help="enter y for no gui; enter n for gui.", default="n")
+    parser.add_argument("-headless", help="enter y for no gui; enter n for gui.", default="y")
+    parser.add_argument("-dayname", help="enter the day you want by name with only the first 3 letters (e.g., 'wed', 'tue', 'mon')", default=None)
+    parser.add_argument("-multithread", help="enter a string representing the number of threads and the type, e.g., 's2n5' means 2 swim threads, and 5 nelson threads", default="n1")
     # parser.add_argument('-all', help='enter y to search all dates for a reservation; n otherwise', default="n") # TODO: add ability to go through all days...
     return parser.parse_args()
 
@@ -176,8 +182,8 @@ def get_date_options(driver):
     date_options = {}
     date_container = driver.find_elements_by_class_name("single-date-select-one-click")
     for datebtn in date_container:
-        day_by_name = datebtn.find_element_by_class_name("single-date-select-button-day").get_attribute('innerHTML') # not .text; doesn't work on headless w/ screen size small.
-        date_options[day_by_name] = datebtn
+        day_by_name = datebtn.find_element_by_class_name("single-date-select-button-day").get_attribute('innerHTML').lower() # not .text; doesn't work on headless w/ screen size small.
+        date_options[day_by_name.lower()] = datebtn
     return date_options
 
 def try_load_dates(reservation_url, driver, is_headless):
@@ -301,7 +307,7 @@ def create_headless_chrome(reservation_url):
     # caps["pageLoadStrategy"] = "normal"  #  complete
     caps["pageLoadStrategy"] = "eager"  #  interactive
     driver = selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION, options=options, desired_capabilities=caps)
-    driver.implicitly_wait(10)
+    driver.implicitly_wait(LOADING_WAIT_DUR)
     driver.get(reservation_url)
     return driver
 
@@ -321,7 +327,7 @@ def create_chrome_with_gui(reservation_url):
     options.add_argument('--enable-javascript')
     options.add_argument('--window-size=1920,1080')
     driver = selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION, options=options)
-    driver.implicitly_wait(10)
+    driver.implicitly_wait(LOADING_WAIT_DUR)
     driver.get(reservation_url)
     return driver
 
@@ -398,7 +404,27 @@ def select_reservation_date(date_options, days_from_now):
     """
     print("Selecting reservation date...")
     reservation_date = date.today() + timedelta(days=days_from_now)
-    reservation_date_by_name = reservation_date.strftime('%A')[:3] # BFit does names using first 3 letters
+    reservation_date_by_name = reservation_date.strftime('%A')[:3].lower() # BFit does names using first 3 letters
+    if (reservation_date_by_name in date_options):
+        print("Reservation date selected:", reservation_date_by_name)
+        refresh_reservation_date(date_options, reservation_date_by_name)
+    else: 
+        print("No reservations available yet for:", reservation_date_by_name)
+    return reservation_date_by_name
+
+def select_reservation_date_by_name(date_options, reservation_date_by_name):
+    """
+    Attempts to refresh the screen so that the slots displayed are for that specific
+    reservation date. Uses a predetermined reservation date instead of calcuating it.
+
+    Args:
+        date_options (Map<String, WebElement>): A map from [day_by_name, book_btn]
+        reservation_date_by_name (str): the name of the day of the week the user wants
+
+    Returns:
+        (str) reservation date by name.
+    """
+    print("Selecting reservation date...")
     if (reservation_date_by_name in date_options):
         print("Reservation date selected:", reservation_date_by_name)
         refresh_reservation_date(date_options, reservation_date_by_name)
@@ -419,8 +445,8 @@ def refresh_reservation_date(date_options, reservation_date_by_name):
     """
     # Optimized for Bfit -- clicking on a date refreshes buttons; no need to refresh whole page. Simply click on the correct date.
     # Make sure the correct day is selected visually 
-    if date_options[reservation_date_by_name] != None:
-        date_options[reservation_date_by_name].click()
+    if date_options[reservation_date_by_name.lower()] != None:
+        date_options[reservation_date_by_name.lower()].click()
 
 def get_reservation_url(args):
     """
@@ -433,12 +459,43 @@ def get_reservation_url(args):
         (str) reservation url.
     """
     reservation_url = ""
-    if (args.book.lower() == "nelson"):
+    if (args.book.lower() == NELSON_ID):
         reservation_url = NELSON_BOOKING_URL
-    elif (args.book.lower() == "swim"):
+    elif (args.book.lower() == SWIM_ID):
         reservation_url = SWIM_BOOKING_URL
     return reservation_url
 
+def get_dayname_from_args(args):
+    """
+    Parses the args to get the desired reservation day.
+
+    Args:
+        args (args): Args supplied via command line.
+
+    Returns:
+        (str) reservation day by name.
+    """
+    if (args.dayname == None):
+        return None
+    return args.dayname.lower() # make sure lower
+
+def hydrate_from_args(args):
+    """
+    Returns a tuple of all relevant args from the parsed command line args.
+
+    Args:
+        args (args): Args supplied via command line.
+
+    Returns:
+        tuple containing relevant arguments, parsed.
+    """
+    # Hydrate 
+    reservation_url = get_reservation_url(args)
+    days_from_now = int(args.day)
+    is_headless = args.headless.lower() == "y"
+    dayname = get_dayname_from_args(args)
+    return (reservation_url, days_from_now, is_headless, dayname)
+    
 def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times):
     """
     Gets the most up to date information for the current reservation date passed in, and then 
@@ -491,23 +548,54 @@ def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times
     bar.finish()
     return False # Didn't book this day :(
 
-def book_single_day(reservation_url, days_from_now, is_headless):
+def multithread_book_single_day(args):
+    """
+    Same as book_single_day, except multithreaded.
+
+    Args:
+        args (args): Args supplied via command line.
+    
+    Returns:
+        Nothing
+    """
+    multithread_settings = args.multithread
+    with ThreadPoolExecutor() as executor:
+        for i in range(0, len(multithread_settings), 2): # pairs of args, like n1 or s2
+            booking_id = multithread_settings[i]
+            num_threads = int(multithread_settings[i + 1])
+            args.book = booking_id
+            if (args.book == NELSON_ID):
+                print("Starting NELSON threads...")
+            else:
+                print("Starting SWIM threads...")
+                
+            # Generate threads according to params
+            for t_count in range(num_threads):
+                print(f"Starting thread#{t_count}")
+                executor.submit(book_single_day, args)
+        
+
+def book_single_day(args):
     """
     Attempts to book a single day according to the params provided.
 
     Args:
-        reservation_url (String): The URL of the reservation page.
-        days_from_now (int): The number of days from today the target reservation date lies on (e.g., today == 3/6/2021, target=3/9/2021, days_from_now == 3)
-        is_headless (bool): Whether the program is headless or not (headless == no GUI)
+        args (args): Args supplied via command line.
 
     Returns:
         Nothing
     """
+    # Hydrate 
+    (reservation_url, days_from_now, is_headless, dayname) = hydrate_from_args(args)
+
     # Load chrome instance w/ cookies.
     (driver, date_options) = load_chrome_and_dates(reservation_url, is_headless)
 
     # Make sure the correct date is chosen before beginning
-    reservation_date_by_name = select_reservation_date(date_options, days_from_now)
+    if (dayname != None):
+        reservation_date_by_name = select_reservation_date_by_name(date_options, dayname)
+    else:
+        reservation_date_by_name = select_reservation_date(date_options, days_from_now)
     
     attempt_num = 0
     booked = False
@@ -543,7 +631,7 @@ def book_single_day(reservation_url, days_from_now, is_headless):
     except:
         print("Goodbye! (Although, you already closed me :(")
 
-def book_single_day_benchmark(reservation_url, days_from_now, is_headless):
+def book_single_day_benchmark(args):
     """
     Benchmark for booking a single day -- basically tests how long it takes to get through a single book_single_day function call.
 
@@ -558,7 +646,7 @@ def book_single_day_benchmark(reservation_url, days_from_now, is_headless):
     sum = 0
     for i in range(10):
         t0 = time.time()
-        book_single_day(reservation_url, days_from_now, is_headless)
+        book_single_day(args)
         t1 = time.time()
         diff = t1-t0
         print(f"Total execution time for step {i}: {diff}")
@@ -571,14 +659,23 @@ def book_single_day_benchmark(reservation_url, days_from_now, is_headless):
 def main():
     ################ SUGGESTED USAGES ################
     # (assumes in gym_venv, activate via: source ~/gym_venv/bin/activate; setup via ./create_venv.sh; make sure Python 3.7):
-    # python3.7 signup.py -book swim -day 3 -headless n
+    # python3.7 signup.py -book s -day 3 -headless n
     #    this would attempt to book swim slots for today with a GUI loaded.
     #
-    # python3.7 signup.py -book nelson -day 3 - headless y                                  < - - - - This is my personal preference. Swap 'nelson' for 'swim' if you'd like a swim slot instead.
+    # python3.7 signup.py -book n -day 3 - headless y
     #   this would attempt to book nelson slots for 3 days from now without a GUI.
     #
-    # python3.7 signup.py -book nelson -day 0 -headless y
+    # python3.7 signup.py -book n -day 0 -headless y
     #    this would attempt to book nelson slots for today without a GUI.
+    #
+    # YOU CAN ALSO EXPLICITLY SEARCH FOR A SPECIFIC DAY:
+    # python3.7 signup.py -book n -dayname wed                                        < - - - - This is my personal preference. Swap 'nelson' for 'swim' if you'd like a swim slot instead.
+    #   this would attempt to book a nelson slot for Wednesday without a GUI.
+    # 
+    # You can ALSOOOO multhread!
+    # pass in -multithread s2n5 for example to spawn 2 swim threads and 5 nelson threads; change the total depending on what seems good for you.
+    # in general, it's sXnY where X = number of threads to find swim reservations, Y = number of threads to find nelson reservations
+    # you can also pass in just sX or just nY, and it will still work, if you don't care about one or the other.
     ################ SUGGESTED USAGES ################
 
     
@@ -597,10 +694,10 @@ def main():
 
     # TODO: Add ability to multithread & run multiple instances of this instead of only 1 per shell.
     # TODO: Add going through every day and find reservation for each day (if possible) -- this would prob be used overnight, rather than at midnight, to catch cancellations.
-    # TODO: search by day name instead of by days_from_now
 
     # Attempts to book a single day, according to the args passed in.
-    book_single_day(get_reservation_url(args), int(args.day), args.headless.lower() == "y")
+    multithread_book_single_day(args)
+    # book_single_day(args)
 
 if __name__ == "__main__":
     main()
