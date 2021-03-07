@@ -127,6 +127,7 @@ def successful_book(driver, book_btn):
     Returns:
         true if disabled, false if not.
     """
+    # TODO: double check this works in all cases
     return book_btn.get_attribute("disabled") != None # book button disables itself on a successful click. # TODO: may have to handle "Booking..." text in case of network lag.
     # return driver.find_element_by_id("alertBookingSuccess").get_attribute("hidden") == None # check to see if a success alert popped up
 
@@ -368,11 +369,33 @@ def reset_cookies_load_chrome_and_dates(reservation_url, old_driver, is_headless
     return load_chrome_and_dates(reservation_url, is_headless)
 
 def try_book_slot(driver, book_btn):
-    book_btn.click()
+    """
+    Clicks on the book_btn, and returns whether it was a successful attempt.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+        book_btn (WebElement): The reservation button clicked on.
+
+    Returns:
+        true if reserved, false if not.
+    """
+    book_btn.click() # TODO: error check, could be invalid.
     # Confirm whether or not we got the slot... 
     return successful_book(driver, book_btn)
 
 def select_reservation_date(date_options, days_from_now):
+    """
+    Determines the target reservation date based on days_from_now, and then 
+    attempts to refresh the screen so that the slots displayed are for that specific
+    reservation date.
+
+    Args:
+        date_options (Map<String, WebElement>): A map from [day_by_name, book_btn]
+        days_from_now (int): The number of days from today the target reservation date lies on (e.g., today == 3/6/2021, target=3/9/2021, days_from_now == 3)
+
+    Returns:
+        (str) reservation date by name.
+    """
     print("Selecting reservation date...")
     reservation_date = date.today() + timedelta(days=days_from_now)
     reservation_date_by_name = reservation_date.strftime('%A')[:3] # BFit does names using first 3 letters
@@ -384,12 +407,54 @@ def select_reservation_date(date_options, days_from_now):
     return reservation_date_by_name
 
 def refresh_reservation_date(date_options, reservation_date_by_name):
+    """
+    Clicks on the reservation date button if it exists.
+
+    Args:
+        date_options (Map<String, WebElement>): A map from [day_by_name, book_btn]
+        reservation_date_by_name (str): the name of the day of the week the user wants
+
+    Returns:
+        (str) reservation date by name.
+    """
     # Optimized for Bfit -- clicking on a date refreshes buttons; no need to refresh whole page. Simply click on the correct date.
     # Make sure the correct day is selected visually 
     if date_options[reservation_date_by_name] != None:
         date_options[reservation_date_by_name].click()
 
-def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times, does_refresh, days_from_now):        
+def get_reservation_url(args):
+    """
+    Parses the args passed in to determine the reservation URL.
+
+    Args:
+        args (args): Args supplied via command line.
+    
+    Returns:
+        (str) reservation url.
+    """
+    reservation_url = ""
+    if (args.book.lower() == "nelson"):
+        reservation_url = NELSON_BOOKING_URL
+    elif (args.book.lower() == "swim"):
+        reservation_url = SWIM_BOOKING_URL
+    return reservation_url
+
+def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times):
+    """
+    Gets the most up to date information for the current reservation date passed in, and then 
+    searches for a valid reservation slot according to (1) if it is available, and (2) if the user 
+    wants the slot via config.py. If a valid slot, it attempts to book it.
+    This function returns once a slot is booked, or all slots have been checked.
+
+    Args:
+        driver (Driver): The instance of the web driver being used.
+        date_options (Map<String, WebElement>): A map from [day_by_name, book_btn]
+        reservation_date_by_name (str): the name of the day of the week the user wants
+        ideal_times (Set<String>): a set containing all reservation times the user wants for reservation_date_by_name.
+
+    Returns:
+        True if booked, false if not booked.
+    """
     # Get the most up to date booking info
     refresh_reservation_date(date_options, reservation_date_by_name)
 
@@ -427,20 +492,25 @@ def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times
     return False # Didn't book this day :(
 
 def book_single_day(reservation_url, days_from_now, is_headless):
+    """
+    Attempts to book a single day according to the params provided.
+
+    Args:
+        reservation_url (String): The URL of the reservation page.
+        days_from_now (int): The number of days from today the target reservation date lies on (e.g., today == 3/6/2021, target=3/9/2021, days_from_now == 3)
+        is_headless (bool): Whether the program is headless or not (headless == no GUI)
+
+    Returns:
+        Nothing
+    """
+    # Load chrome instance w/ cookies.
     (driver, date_options) = load_chrome_and_dates(reservation_url, is_headless)
 
-
     # Make sure the correct date is chosen before beginning
-    # dates = False
-    # while (not dates):
-    #     try:
     reservation_date_by_name = select_reservation_date(date_options, days_from_now)
     
     attempt_num = 0
     booked = False
-    # booked = check_for_reservation(driver)
-    # if (booked):
-    #     print("You already have a valid reservation! Please cancel first before running this.")
 
     # Load the ideal time slots from the relevant config 
     ideal_times = []
@@ -454,12 +524,13 @@ def book_single_day(reservation_url, days_from_now, is_headless):
         print("Starting attempt", attempt_num)
         
         # Handle cases where the target reservation date doesn't exist on the page yet
+        # Essentially refreshes until the reservation date exists in the set of dates on the Bfit page.
         while (reservation_date_by_name not in date_options):
             print("Refreshing to get new reservation dates...")
             driver.refresh()
             (driver, date_options) = try_load_dates_no_error(driver)
 
-        booked = try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times, True, days_from_now)
+        booked = try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times)
         if (booked): # or check_for_reservation(driver)
             print("Successfully grabbed slot :)")
             booked = True
@@ -467,17 +538,23 @@ def book_single_day(reservation_url, days_from_now, is_headless):
             print("Attempt", attempt_num, "failed :(. Trying again.")
             attempt_num += 1
     
-    # if (is_headless): # headless always should end program
-    #     driver.close()
-    #     return
-    
-    # input("...PRESS ANY KEY TO EXIT...")
     try:
         driver.close()
     except:
         print("Goodbye! (Although, you already closed me :(")
 
 def book_single_day_benchmark(reservation_url, days_from_now, is_headless):
+    """
+    Benchmark for booking a single day -- basically tests how long it takes to get through a single book_single_day function call.
+
+    Args:
+        reservation_url (String): The URL of the reservation page.
+        days_from_now (int): The number of days from today the target reservation date lies on (e.g., today == 3/6/2021, target=3/9/2021, days_from_now == 3)
+        is_headless (bool): Whether the program is headless or not (headless == no GUI)
+
+    Returns:
+        Nothing
+    """
     sum = 0
     for i in range(10):
         t0 = time.time()
@@ -487,14 +564,6 @@ def book_single_day_benchmark(reservation_url, days_from_now, is_headless):
         print(f"Total execution time for step {i}: {diff}")
         sum += diff
     print("avg:", sum/10)
-
-def get_reservation_url(args):
-    reservation_url = ""
-    if (args.book.lower() == "nelson"):
-        reservation_url = NELSON_BOOKING_URL
-    elif (args.book.lower() == "swim"):
-        reservation_url = SWIM_BOOKING_URL
-    return reservation_url
 
 #################### END HELPERS ####################
 
@@ -528,6 +597,7 @@ def main():
 
     # TODO: Add ability to multithread & run multiple instances of this instead of only 1 per shell.
     # TODO: Add going through every day and find reservation for each day (if possible) -- this would prob be used overnight, rather than at midnight, to catch cancellations.
+    # TODO: search by day name instead of by days_from_now
 
     # Attempts to book a single day, according to the args passed in.
     book_single_day(get_reservation_url(args), int(args.day), args.headless.lower() == "y")
