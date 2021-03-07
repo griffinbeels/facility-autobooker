@@ -21,7 +21,9 @@ SHIBBOLETH_PASSWORD = config.password
 CHROME_DRIVER_LOCATION = "./chromedriver"
 COOKIE_PATH = "./cookies.json"
 NELSON_ID = "n"
+NELSON_NAME = "Nelson"
 SWIM_ID = "s"
+SWIM_NAME = "Swim"
 NELSON_BOOKING_URL = "https://bfit.brownrec.com/booking/4a42ba76-754b-48c9-95fd-8df6d4e3fb4d"
 SWIM_BOOKING_URL = "https://bfit.brownrec.com/booking/25de03fb-15e3-429d-bd3c-9483cc821ad5"
 LOADING_WAIT_DUR = 3
@@ -30,11 +32,11 @@ LOADING_WAIT_DUR = 3
 #################### START HELPERS ####################
 def parse_args():
     parser = argparse.ArgumentParser(description='Bfit Auto Booker')
-    parser.add_argument('-book', help='which of [(n)elson, s(wim)] you want to book. That is, one of {n, s}.', default='n')
-    parser.add_argument('-day', help='which day you want between [0, 3] where 0 is today, 3 is three days from now', default=3)
+    parser.add_argument('-nelson', help="number of threads you want to use to book nelson slots", default=0)
+    parser.add_argument('-swim', help="number of threads you want to use to book swim slots", default=0)
+    parser.add_argument('-daysfromnow', help='which day you want between [0, 3] where 0 is today, 3 is three days from now', default=3)
+    parser.add_argument("-dayofweek", help="enter the day you want by name with only the first 3 letters (e.g., 'wed', 'tue', 'mon')", default=None)
     parser.add_argument("-headless", help="enter y for no gui; enter n for gui.", default="y")
-    parser.add_argument("-dayname", help="enter the day you want by name with only the first 3 letters (e.g., 'wed', 'tue', 'mon')", default=None)
-    parser.add_argument("-multithread", help="enter a string representing the number of threads and the type, e.g., 's2n5' means 2 swim threads, and 5 nelson threads", default="n1")
     # parser.add_argument('-all', help='enter y to search all dates for a reservation; n otherwise', default="n") # TODO: add ability to go through all days...
     return parser.parse_args()
 
@@ -448,24 +450,24 @@ def refresh_reservation_date(date_options, reservation_date_by_name):
     if date_options[reservation_date_by_name.lower()] != None:
         date_options[reservation_date_by_name.lower()].click()
 
-def get_reservation_url(args):
+def get_reservation_url(id):
     """
     Parses the args passed in to determine the reservation URL.
 
     Args:
-        args (args): Args supplied via command line.
+        id (str): The ID of the reservation page we're looking for (e.g., NELSON_ID)
     
     Returns:
         (str) reservation url.
     """
     reservation_url = ""
-    if (args.book.lower() == NELSON_ID):
+    if (id == NELSON_ID):
         reservation_url = NELSON_BOOKING_URL
-    elif (args.book.lower() == SWIM_ID):
+    elif (id == SWIM_ID):
         reservation_url = SWIM_BOOKING_URL
     return reservation_url
 
-def get_dayname_from_args(args):
+def get_day_of_week_from_args(args):
     """
     Parses the args to get the desired reservation day.
 
@@ -475,26 +477,42 @@ def get_dayname_from_args(args):
     Returns:
         (str) reservation day by name.
     """
-    if (args.dayname == None):
+    if (args.dayofweek == None):
         return None
-    return args.dayname.lower() # make sure lower
+    return args.dayofweek.lower() # make sure lower
 
-def hydrate_from_args(args):
+def hydrate_from_args(args, id):
     """
     Returns a tuple of all relevant args from the parsed command line args.
 
     Args:
         args (args): Args supplied via command line.
+        id (str): The ID of the reservation page we're looking for (e.g., NELSON_ID)
 
     Returns:
         tuple containing relevant arguments, parsed.
     """
     # Hydrate 
-    reservation_url = get_reservation_url(args)
-    days_from_now = int(args.day)
+    reservation_url = get_reservation_url(id)
+    days_from_now = int(args.daysfromnow)
     is_headless = args.headless.lower() == "y"
-    dayname = get_dayname_from_args(args)
+    dayname = get_day_of_week_from_args(args)
     return (reservation_url, days_from_now, is_headless, dayname)
+
+def id_to_name(id):
+    """
+    Returns a human readable version of the ID passed in
+
+    Args:
+        id (str): Some ID like NELSON_ID
+
+    Returns:
+        (str) version that is more human readable / understandable.
+    """
+    if (id == NELSON_ID):
+        return NELSON_NAME
+    elif (id == SWIM_ID):
+        return SWIM_NAME
     
 def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times):
     """
@@ -558,42 +576,54 @@ def multithread_book_single_day(args):
     Returns:
         Nothing
     """
-    multithread_settings = args.multithread
+    # Arguments for number of nelson / swim threads
+    num_nelson_threads = int(args.nelson)
+    num_swim_threads = int(args.swim)
+
+    # Handle no threads requested
+    if (num_nelson_threads <= 0 and num_swim_threads <= 0):
+        print("ERROR: Please request at least one thread for one of {nelson, swim} reservations. For example, '-nelson 5' creates 5 threads for Nelson reservations.")
+        return
+
+    # Multithread reservations
     with ThreadPoolExecutor() as executor:
-        for i in range(0, len(multithread_settings), 2): # pairs of args, like n1 or s2
-            booking_id = multithread_settings[i]
-            num_threads = int(multithread_settings[i + 1])
-            args.book = booking_id
-            if (args.book == NELSON_ID):
-                print("Starting NELSON threads...")
-            else:
-                print("Starting SWIM threads...")
-                
-            # Generate threads according to params
-            for t_count in range(num_threads):
+        # Generate threads for Nelson reservations
+        print("Starting NELSON threads...")
+        if (num_nelson_threads > 0):
+            for t_count in range(num_nelson_threads):
                 print(f"Starting thread#{t_count}")
-                executor.submit(book_single_day, args)
+                executor.submit(book_single_day, args, NELSON_ID, t_count)
+
+        # Generate threads for Swim reservations
+        if (num_swim_threads > 0):
+            print("Starting SWIM threads...")
+            for t_count in range(num_swim_threads):
+                print(f"Starting thread#{t_count + num_nelson_threads}")
+                executor.submit(book_single_day, args, SWIM_ID, t_count + num_nelson_threads)
         
 
-def book_single_day(args):
+def book_single_day(args, id, thread_num):
     """
     Attempts to book a single day according to the params provided.
 
     Args:
         args (args): Args supplied via command line.
+        id (str): The ID of the reservation page we're looking for (e.g., NELSON_ID)
+        thread_num (int): the thread number assigned to this function
 
     Returns:
         Nothing
     """
     # Hydrate 
-    (reservation_url, days_from_now, is_headless, dayname) = hydrate_from_args(args)
+    (reservation_url, days_from_now, is_headless, dayofweek) = hydrate_from_args(args, id)
+    readable_facility_name = id_to_name(id)
 
     # Load chrome instance w/ cookies.
     (driver, date_options) = load_chrome_and_dates(reservation_url, is_headless)
 
     # Make sure the correct date is chosen before beginning
-    if (dayname != None):
-        reservation_date_by_name = select_reservation_date_by_name(date_options, dayname)
+    if (dayofweek != None):
+        reservation_date_by_name = select_reservation_date_by_name(date_options, dayofweek)
     else:
         reservation_date_by_name = select_reservation_date(date_options, days_from_now)
     
@@ -609,7 +639,7 @@ def book_single_day(args):
     
     while not booked: # while didn't book, keep trying!
         print("--------------")
-        print("Starting attempt", attempt_num)
+        print(f"Starting attempt {attempt_num} for {readable_facility_name} via thread#[{thread_num}]")
         
         # Handle cases where the target reservation date doesn't exist on the page yet
         # Essentially refreshes until the reservation date exists in the set of dates on the Bfit page.
@@ -659,23 +689,18 @@ def book_single_day_benchmark(args):
 def main():
     ################ SUGGESTED USAGES ################
     # (assumes in gym_venv, activate via: source ~/gym_venv/bin/activate; setup via ./create_venv.sh; make sure Python 3.7):
-    # python3.7 signup.py -book s -day 3 -headless n
-    #    this would attempt to book swim slots for today with a GUI loaded.
-    #
-    # python3.7 signup.py -book n -day 3 - headless y
-    #   this would attempt to book nelson slots for 3 days from now without a GUI.
-    #
-    # python3.7 signup.py -book n -day 0 -headless y
-    #    this would attempt to book nelson slots for today without a GUI.
-    #
-    # YOU CAN ALSO EXPLICITLY SEARCH FOR A SPECIFIC DAY:
-    # python3.7 signup.py -book n -dayname wed                                        < - - - - This is my personal preference. Swap 'nelson' for 'swim' if you'd like a swim slot instead.
-    #   this would attempt to book a nelson slot for Wednesday without a GUI.
+    # python3.7 -nelson 5 -swim 5 -dayofweek mon 
+    #       this will spin up 10 threads: 5 dedicated to booking nelson slots, 5 for swim slots. All looking for monday. In headless mode.
     # 
-    # You can ALSOOOO multhread!
-    # pass in -multithread s2n5 for example to spawn 2 swim threads and 5 nelson threads; change the total depending on what seems good for you.
-    # in general, it's sXnY where X = number of threads to find swim reservations, Y = number of threads to find nelson reservations
-    # you can also pass in just sX or just nY, and it will still work, if you don't care about one or the other.
+    # python3.7 -nelson 1 -dayofweek mon
+    #       this will spin up 1 thread for looking for a monday Nelson slot
+    #       **IF YOU HAVEN'T RUN THIS IN A WHILE, USE THIS. OTHERWISE AUTHENTICATION WILL SPAM A BUNCH OF WINDOWS. TRUST ME.**
+    #       Afterwards, go back to multithreading.
+    # 
+    # python3.7 -nelson 2 -swim 2 -dayofweek wed
+    #       Suppose today is Saturday at 11:59pm. If I ran this, each thread will keep refreshing until wednesday becomes available,
+    #       at which point all of them will immediately jump on a slot. This is how I usually book. Choose the NEXT day of the week that
+    #       should logically appear in sequence.
     ################ SUGGESTED USAGES ################
 
     
@@ -687,14 +712,17 @@ def main():
     # PRE-REFRESH OPTIMIZATION (no reservation check)
     # Headless avg over 10 samples low traffic: 4.0232669591903685
     # GUI avg over 10 samples low traffic: 4.428485107421875
+    #
+    # MULTITHREADING OPTIMIZATION
+    # To be honest, once I implemented this, I have no idea how to benchmark this anymore -- the answer is: it will get you a slot.
     ################ BENCHMARKS ################
 
     # IMPORTANT: Read the #README before continuing, to make sure you setup your config properly.
     args = parse_args()
 
-    # TODO: Add ability to multithread & run multiple instances of this instead of only 1 per shell.
     # TODO: Add going through every day and find reservation for each day (if possible) -- this would prob be used overnight, rather than at midnight, to catch cancellations.
-
+    # TODO: error check all selenium calls, cuz those get fucky if stuff is closed lol
+    
     # Attempts to book a single day, according to the args passed in.
     multithread_book_single_day(args)
     # book_single_day(args)
