@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument('-daysfromnow', help='which day you want between [0, 3] where 0 is today, 3 is three days from now', default=3)
     parser.add_argument("-dayofweek", help="enter the day you want by name with only the first 3 letters (e.g., 'wed', 'tue', 'mon')", default=None)
     parser.add_argument("-headless", help="enter y for no gui; enter n for gui.", default="y")
+    parser.add_argument("-stoponbook", help="enter y to stop all threads on a successful book, n otherwise.", default="y")
     # parser.add_argument('-all', help='enter y to search all dates for a reservation; n otherwise', default="n") # TODO: add ability to go through all days...
     return parser.parse_args()
 
@@ -513,8 +514,20 @@ def id_to_name(id):
         return NELSON_NAME
     elif (id == SWIM_ID):
         return SWIM_NAME
+
+def should_stop_on_book(stop_on_book):
+    """
+    Returns whether or not all threads should stop on a single successful book or not.
+
+    Args:
+        stop_on_book (str): Arg that's one of {y, n}
     
-def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times):
+    Returns:
+        (bool) true if should stop, false if should continue.
+    """
+    return stop_on_book == "y"
+    
+def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times, should_stop):
     """
     Gets the most up to date information for the current reservation date passed in, and then 
     searches for a valid reservation slot according to (1) if it is available, and (2) if the user 
@@ -526,6 +539,7 @@ def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times
         date_options (Map<String, WebElement>): A map from [day_by_name, book_btn]
         reservation_date_by_name (str): the name of the day of the week the user wants
         ideal_times (Set<String>): a set containing all reservation times the user wants for reservation_date_by_name.
+        should_stop (bool): whether or not booking should continue after a reservation is detected.
 
     Returns:
         True if booked, false if not booked.
@@ -556,7 +570,7 @@ def try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times
                         print("\nAttempting to book", reservation_date_by_name, "at", target_time_slot)
                         booked = try_book_slot(driver, book_btn)
                         # Return if booked successfully or stop early if booked previously (not caught by selenium)
-                        if (booked): # or slot.find_element_by_class_name("text-primary").text.strip().lower() == "booked"):
+                        if (booked or (should_stop and slot.find_element_by_class_name("text-primary").text.strip().lower() == "booked")):
                             bar.finish()
                             return True
             bar.next()
@@ -629,6 +643,7 @@ def book_single_day(args, id, thread_num):
     
     attempt_num = 0
     booked = False
+    should_stop = should_stop_on_book(args.stoponbook)
 
     # Load the ideal time slots from the relevant config 
     ideal_times = []
@@ -648,9 +663,10 @@ def book_single_day(args, id, thread_num):
             driver.refresh()
             (driver, date_options) = try_load_dates_no_error(driver)
 
-        booked = try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times)
+        booked = try_book_for_day(driver, date_options, reservation_date_by_name, ideal_times, should_stop)
         if (booked): # or check_for_reservation(driver)
-            print("Successfully grabbed slot :)")
+            print("You have a slot! Ending thread now!")
+            print("xxxxxxxxxxxxxxxxx")
             booked = True
         else:
             print("Attempt", attempt_num, "failed :(. Trying again.")
@@ -689,18 +705,22 @@ def book_single_day_benchmark(args):
 def main():
     ################ SUGGESTED USAGES ################
     # (assumes in gym_venv, activate via: source ~/gym_venv/bin/activate; setup via ./create_venv.sh; make sure Python 3.7):
-    # python3.7 -nelson 5 -swim 5 -dayofweek mon 
+    # python3.7 signup.py -nelson 5 -swim 5 -dayofweek mon 
     #       this will spin up 10 threads: 5 dedicated to booking nelson slots, 5 for swim slots. All looking for monday. In headless mode.
     # 
-    # python3.7 -nelson 1 -dayofweek mon
+    # python3.7 signup.py -nelson 1 -dayofweek mon
     #       this will spin up 1 thread for looking for a monday Nelson slot
     #       **IF YOU HAVEN'T RUN THIS IN A WHILE, USE THIS. OTHERWISE AUTHENTICATION WILL SPAM A BUNCH OF WINDOWS. TRUST ME.**
     #       Afterwards, go back to multithreading.
     # 
-    # python3.7 -nelson 2 -swim 2 -dayofweek wed
+    # python3.7 signup.py -nelson 2 -swim 2 -dayofweek wed
     #       Suppose today is Saturday at 11:59pm. If I ran this, each thread will keep refreshing until wednesday becomes available,
     #       at which point all of them will immediately jump on a slot. This is how I usually book. Choose the NEXT day of the week that
     #       should logically appear in sequence.
+    #
+    # python3.7 signup.py -dayofweek wed -nelson 5 -swim 5 -stoponbook y
+    #       Similarly, this runs 5 threads each, and then IF THERE IS A SUCCESSFUL BOOKING IN ONE OF THE THREADS (or you already booked
+    #       something and you're running this again), all threads will stop once that's detected.
     ################ SUGGESTED USAGES ################
 
     
@@ -720,9 +740,12 @@ def main():
     # IMPORTANT: Read the #README before continuing, to make sure you setup your config properly.
     args = parse_args()
 
+    # TODO: Cancel current reservation if a better reservation appears (so that ANY slot is grabbed and then replaced later...)
     # TODO: Add going through every day and find reservation for each day (if possible) -- this would prob be used overnight, rather than at midnight, to catch cancellations.
     # TODO: error check all selenium calls, cuz those get fucky if stuff is closed lol
-    
+    # TODO: add a delay option so if run overnight, it's not spamming -- it would check everything 30 seconds or so between attempts
+    # TODO: stop threads on book?
+
     # Attempts to book a single day, according to the args passed in.
     multithread_book_single_day(args)
     # book_single_day(args)
