@@ -7,9 +7,21 @@ Signup for Nelson / Swim slots automatically.
 ### Assumptions:
 
 * MacOS -- I developed this on Mac, not sure how it fares on Windows.
+    
+    * As of most recent commit, Windows is supported. A few notes:
+        
+        * There might be issues with creating the virtual environment. I made a `create_venv_windows.sh` script, but not sure if it works 100% of the time. Seemed fine, though. If stuff doesn't work, then try manually entering the lines in that script.
+
+        * I used Git Bash when working in VSCode.
+
+        * Activate venv using `source ~/gym_venv/Scripts/activate`
+
+        * Let me know if there are any other issues! In theory this should also work on Linux, but I'm not gonna work on that ever, so LOL. 
+        
 * Python3.7.3 -- I developed this using Python3.7.3, so if you use a different Python version, keep in mind that there *may* be issues.
 * VSCode -- If I mention any IDE specific things, it will be in the context of VSCode.
 * Git -- I will assume a basic understanding of Git and how to navigate directories.
+* Chrome version 89 -- **VERY IMPORTANT**. Otherwise, Chrome will always crash when you attempt to start Selenium. 
 
 # Getting Started
 

@@ -730,7 +730,7 @@ def book_single_day_benchmark(args):
 #################### MAIN ####################
 def main():
     ################ SUGGESTED USAGES ################
-    # (assumes in gym_venv, activate via: source ~/gym_venv/bin/activate; setup via ./create_venv.sh; make sure Python 3.7):
+    # (assumes in gym_venv, activate via: source ~/gym_venv/bin/activate; setup via ./create_venv.sh; make sure Python 3.7), or source ~/gym_venv/Scripts/activate on Windows.
     # python3.7 signup.py -nelson 5 -swim 5 -dayofweek mon 
     #       this will spin up 10 threads: 5 dedicated to booking nelson slots, 5 for swim slots. All looking for monday. In headless mode.
     # 
