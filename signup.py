@@ -12,13 +12,16 @@ from datetime import date
 from datetime import timedelta
 from progress.bar import Bar
 import argparse
+import platform
 import config
 #################### END IMPORTS ####################
 
 #################### START CONSTANTS ####################
 SHIBBOLETH_USERNAME = config.username
 SHIBBOLETH_PASSWORD = config.password
-CHROME_DRIVER_LOCATION = "./chromedriver"
+CHROME_DRIVER_LOCATION_MAC = "./chromedriver"
+CHROME_DRIVER_LOCATION_WINDOWS = "./chromedriver.exe"
+CHROME_DRIVER_LOCATION_LINUX = "./chromedriver_linux"
 COOKIE_PATH = "./cookies.json"
 NELSON_ID = "n"
 NELSON_NAME = "Nelson"
@@ -309,7 +312,8 @@ def create_headless_chrome(reservation_url):
     caps = DesiredCapabilities().CHROME
     # caps["pageLoadStrategy"] = "normal"  #  complete
     caps["pageLoadStrategy"] = "eager"  #  interactive
-    driver = selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION, options=options, desired_capabilities=caps)
+    driver = choose_driver_from_os(options, caps)
+    
     driver.implicitly_wait(LOADING_WAIT_DUR)
     driver.get(reservation_url)
     return driver
@@ -329,10 +333,32 @@ def create_chrome_with_gui(reservation_url):
     options = Options()
     options.add_argument('--enable-javascript')
     options.add_argument('--window-size=1920,1080')
-    driver = selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION, options=options)
+    driver = choose_driver_from_os(options, DesiredCapabilities().CHROME) # default caps
     driver.implicitly_wait(LOADING_WAIT_DUR)
     driver.get(reservation_url)
     return driver
+
+def choose_driver_from_os(options, caps):
+    """
+    Returns the correct webdriver instance using a different version of ChromeDriver
+    depending on the user's operating system.
+
+    Args:
+        options (Options): The arguments / options for chrome driver.
+        caps (DesiredCapabilities): Capabiltiies for chrome (if not default).
+    
+    Returns:
+        ChromeDriver using correct operating system's version
+    """
+    my_os = platform.system()
+    if (my_os == "Windows"):
+        return selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION_WINDOWS, options=options, desired_capabilities=caps)
+    elif (my_os == "Darwin"):
+        return selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION_MAC, options=options, desired_capabilities=caps)
+    elif (my_os == "Linux"):
+        return selenium.webdriver.Chrome(CHROME_DRIVER_LOCATION_LINUX, options=options, desired_capabilities=caps)
+    print("ERROR: You're using an invalid OS -- please use Linux, Mac, or Windows.")
+    quit()
 
 def create_driver_instance(reservation_url, is_headless):
     """
