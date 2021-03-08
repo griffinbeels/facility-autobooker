@@ -1,5 +1,5 @@
 # Brown Facility Autobooker
-Signup for Nelson / Swim gym slots automatically.
+Signup for Nelson / Swim slots automatically.
 
 
 # Installation
