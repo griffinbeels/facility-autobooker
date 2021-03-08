@@ -8,30 +8,56 @@ Signup for Nelson / Swim gym slots automatically.
 
 * MacOS -- I developed this on Mac, not sure how it fares on Windows.
 * Python3.7.3 -- I developed this using Python3.7.3, so if you use a different Python version, keep in mind that there *may* be issues.
+* VSCode -- If I mention any IDE specific things, it will be in the context of VSCode.
+* Git -- I will assume a basic understanding of Git and how to navigate directories.
 
+# Getting Started
 
-### Intructions:
+### Installation:
 
-1. Create a virtual environment, by running the following in your terminal:
+1. Clone this repo. If you don't have Git installed, [install it here](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git). Clone by running the following in your terminal:
+```
+git clone https://github.com/griffinbeels/gym.git
+```
+
+2. `cd` into the cloned directory.
+
+3. Create a virtual environment, by running the following in your terminal:
 ```
 ./create_venv.sh
 ```
 
-2. If the virtual environment is not activated, do so by entering:
+4. If the virtual environment is not activated (make sure it's active every time you run this program), do so by entering:
 ```
 source ~/gym_venv/bin/activate 
 ```
 
-3. To run, simply enter:
+5. To run, simply enter (where arguments is a series of arguments defined in [Features](#Features)):
 ```
 python3.7 signup.py [arguments]
 ```
 
-# Getting Started
-
 ### Configuration
 
-The 
+After the initial installation above (MAKE SURE TO DO THAT), open the repo in your IDE of choice (in my case, VSCode). From there, open `sample_config.py`. This file informs `signup.py` about your preferred Nelson / Swim slots. Do the following:
+
+1. Rename `sample_config.py` to `config.py` -- this will point `signup.py` to the correct file. **If you don't do this, the program will fail on `import config`**.
+
+2. Open the newly renamed `config.py`. 
+
+3. Replace `"username"` in `username = "username"` with the username you use to sign into Brown's SSO service (the page that loads when you click on Log In -> Brown Username on [this page](https://bfit.brownrec.com/)). This will allow the program to autofill your username when signing in.
+
+3. Do the same for `"password"`. This will allow the program to autofill your password when signing in. **NOTE: this doesn't store your password anywhere, other than that config file you just edited -- don't worry!**.
+
+4. Scroll down to `target_nelson_time_slots`. Enter the times for each day that you would like to register for.
+
+    * Slots are split into sections based on their start time. For example, `start10am` defines the slot from `10 - 11 AM`. Logically, that slot starts at 10am, hence the variable name.
+
+    * Examples are provided!
+
+5. Scroll down to `target_swim_time_slots` and do the same as step 4. 
+
+6. Run the program by choosing a series of arguments from [Features](#Features) down below, or referring to the [Examples](#Examples) section. Congrats, you did it!
 
 # Features
 
@@ -124,3 +150,39 @@ You can find all of the arguments at the top of signup.py, however here are all 
     
     * **Default:** `y`.
 
+# Examples
+
+### **"I haven't run this yet tonight..."**
+* Start the program by typing:
+```
+python3.7 signup.py -nelson 1
+```
+* This will load a single nelson slot attempt for 3 days from now. **More importantly, after you authenticate using Brown SSO, it will store your cookies!!!!** 
+
+* This is incredibly important, and usually how I start using the program. This makes sure that, if I'm multithreading, I don't have to login to each thread -- they're all accessing some fresh, hot cookies.
+
+### **"I loaded my cookies, and now I want to book a Nelson slot for this coming Thursday at midnight!!!!"**
+* After loading your cookies using the above method, start the program around ~11:58 or so, by doing the following:
+
+```
+python3.7 signup.py -nelson 10 -dayofweek thu
+```
+
+* This will spin up 10 threads to start booking for you. You should see your terminal start to spam a lot of text. In particular, it will say `"Refreshing to get new reservation dates..."` until Thursday's slots are up.
+
+* Keep this running until you book a slot!
+
+### **"But I want both Nelson AND Swim slots to be booked :("**
+
+* Do the same as the above, except with the following command:
+```
+python3.7 signup.py -nelson 5 -swim 5 -dayofweek thu
+```
+
+* Feel free to adjust the threads dedicated to each facility however you please.
+
+
+# Conclusion
+
+Try not to share this with too many people, as the efficacy of the bot diminishes as more people have access to good bots.
+If you used this, and I didn't explicitly share it with you, that's fine, just make sure to buy me a beer or something the next time you see me! : ) 
