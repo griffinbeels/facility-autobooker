@@ -5,6 +5,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+import logging
+from selenium.webdriver.remote.remote_connection import LOGGER
+LOGGER.setLevel(logging.WARNING)
 from concurrent.futures import ThreadPoolExecutor, wait
 import json
 import time
@@ -304,6 +307,7 @@ def create_headless_chrome(reservation_url):
         Instantiated headless Chrome Web Driver.
     """
     options = Options()
+    options.add_argument("--log-level=3")
     options.add_argument('--headless')
     options.add_argument('--disable-gpu')
     options.add_argument('--enable-javascript')
@@ -331,6 +335,7 @@ def create_chrome_with_gui(reservation_url):
         Instantiated Chrome Web Driver with GUI.
     """
     options = Options()
+    options.add_argument("--log-level=3")
     options.add_argument('--enable-javascript')
     options.add_argument('--window-size=1920,1080')
     driver = choose_driver_from_os(options, DesiredCapabilities().CHROME) # default caps
