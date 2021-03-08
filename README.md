@@ -159,6 +159,8 @@ python3.7 signup.py -nelson 1
 ```
 * This will load a single nelson slot attempt for 3 days from now. **More importantly, after you authenticate using Brown SSO, it will store your cookies!!!!** 
 
+* Cookies are stored in `cookies.json` -- YOU NEED TO REFRESH THESE AT THE BEGINNING OF EVERY BOT SESSION. They expire pretty quick, so do this *right* before times are going to change for the night.
+
 * This is incredibly important, and usually how I start using the program. This makes sure that, if I'm multithreading, I don't have to login to each thread -- they're all accessing some fresh, hot cookies.
 
 ### **"I loaded my cookies, and now I want to book a Nelson slot for this coming Thursday at midnight!!!!"**
