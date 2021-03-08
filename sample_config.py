@@ -7,6 +7,7 @@ password = "password" # Password for SSO login
 # Time slots that you want for the Nelson:
 # NELSON:
 # Monday - Friday:
+start615am = "6:15 - 7:15 AM"
 start730am = "7:30 - 8:30 AM"
 start845am = "8:45 - 9:45 AM"
 start10am = "10 - 11 AM"
@@ -15,6 +16,7 @@ start115pm = "1:15 - 2:15 PM"
 start230pm = "2:30 - 3:30 PM"
 start345pm = "3:45 - 4:45 PM"
 start5pm = "5 - 6 PM"
+start615pm = "6:15 - 7:15 PM"
 
 # Saturday & Sunday:
 # start10am = "10 - 11 AM" # -- ALREADY DEFINED ABOVE
@@ -25,11 +27,11 @@ start145pm = "1:45 - 2:45 PM"
 # IMPORTANT: Make sure the array is ordered by PREFERENCE (e.g., first item is most prefered slot)
 target_nelson_time_slots = {
     'sun': [start1230pm, start145pm],
-    'mon': [start5pm, start345pm],
+    'mon': [start5pm, start615pm, start345pm],
     'tue': [start115pm, start230pm],
-    'wed': [start5pm, start345pm],
+    'wed': [start5pm, start615pm, start345pm],
     'thu': [start115pm, start230pm, start345pm],
-    'fri': [start5pm, start345pm],
+    'fri': [start615pm],
     'sat': [start1230pm, start145pm]
 }
 
@@ -48,7 +50,7 @@ start2pm = "2 - 3 PM"
 # IMPORTANT: Make sure the array is ordered by PREFERENCE (e.g., first item is most prefered slot)
 target_swim_time_slots = {
     'sun': [start1245pm, start2pm],
-    'mon': [start9am],
+    'mon': [start1130am],
     'tue': [start1245pm],
     'wed': [start1245pm],
     'thu': [start1245pm],
